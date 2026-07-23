@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "probe": "node scripts/collect-prices.mjs --probe US",
     "collect": "node scripts/collect-prices.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",

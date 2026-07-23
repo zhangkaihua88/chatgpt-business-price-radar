@@ -8,6 +8,7 @@ import {
   fetchJsonWithRetry,
   mergeStaleRows,
   parsePriceResponse,
+  sourceUrl,
   validateCoverage,
   withConvertedAmounts,
 } from "../scripts/collect-prices.mjs";
@@ -58,6 +59,28 @@ describe("official Business monthly parser", () => {
       kind: "unsupported",
       status: 404,
     });
+  });
+
+  it("sends the stable OpenAI route headers without session identifiers", async () => {
+    const raw = await fixture("us.json");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(raw));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchJsonWithRetry(sourceUrl("US"), { retries: 1 });
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers["x-openai-target-path"]).toBe("/backend-anon/checkout_pricing_config/configs/US");
+    expect(headers["x-openai-target-route"]).toBe("/backend-anon/checkout_pricing_config/configs/{country_code}");
+    expect(headers.referer).toBe("https://chatgpt.com/zh-Hans-CN/pricing/");
+    expect(Object.keys(headers).some((key) => /session|device|cookie/i.test(key))).toBe(false);
+  });
+
+  it("includes a safe response preview when an edge rejects the request", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: { get: (name) => name === "server" ? "cloudflare" : "text/html" },
+      text: async () => "Access denied by edge policy",
+    }));
+    await expect(fetchJsonWithRetry(sourceUrl("US"), { retries: 1 })).rejects.toThrow(/HTTP 403.*Access denied/);
   });
 });
 
@@ -112,11 +135,11 @@ describe("conversion and snapshot guards", () => {
     const sgFixture = await fixture("sg.json");
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
-      if (url.endsWith("/US")) return { ok: true, status: 200, json: async () => usFixture };
-      if (url.endsWith("/SG")) return { ok: true, status: 200, json: async () => sgFixture };
+      if (url.endsWith("/US")) return jsonResponse(usFixture);
+      if (url.endsWith("/SG")) return jsonResponse(sgFixture);
       if (url.endsWith("/ZZ")) return { ok: false, status: 404 };
       if (url.startsWith("https://api.frankfurter.dev/")) {
-        return { ok: true, status: 200, json: async () => ({ base: "USD", date: "2026-07-22", rates: { CNY: 6.8, SGD: 1.25 } }) };
+        return jsonResponse({ base: "USD", date: "2026-07-22", rates: { CNY: 6.8, SGD: 1.25 } });
       }
       throw new Error(`Unexpected URL: ${url}`);
     }));
@@ -133,3 +156,12 @@ describe("conversion and snapshot guards", () => {
     expect(() => validateCoverage(snapshot, null, 2)).not.toThrow();
   });
 });
+
+function jsonResponse(data) {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: (name) => name === "content-type" ? "application/json" : null },
+    text: async () => JSON.stringify(data),
+  };
+}

@@ -23,7 +23,7 @@ const FRANKFURTER_URL = "https://api.frankfurter.dev/v1/latest";
 const OPEN_EXCHANGE_URL = "https://open.er-api.com/v6/latest/USD";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_RETRIES = 3;
-const DEFAULT_CONCURRENCY = 6;
+const DEFAULT_CONCURRENCY = 4;
 const STALE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const upstreamSchema = z.object({
@@ -142,8 +142,7 @@ async function fetchWithTimeout(url, options = {}) {
   try {
     return await fetch(url, {
       headers: {
-        accept: "application/json",
-        "user-agent": "BusinessPriceRadar/1.0 (public pricing reference)",
+        ...requestHeaders(url),
         ...options.headers,
       },
       signal: controller.signal,
@@ -161,11 +160,22 @@ export async function fetchJsonWithRetry(url, options = {}) {
       const response = await fetchWithTimeout(url, options);
       if (response.status === 404) return { kind: "unsupported", status: 404 };
       if (!response.ok) {
-        const error = new Error(`HTTP ${response.status} for ${url}`);
+        const detail = await responseDetail(response);
+        const error = new Error(`HTTP ${response.status} for ${url}${detail}`);
         if (response.status < 500 && response.status !== 429) throw Object.assign(error, { nonRetryable: true });
         throw error;
       }
-      return { kind: "success", data: await response.json(), status: response.status };
+      const contentType = response.headers?.get?.("content-type") || "unknown";
+      const body = await response.text();
+      try {
+        return { kind: "success", data: JSON.parse(body), status: response.status };
+      } catch {
+        const preview = safePreview(body);
+        throw Object.assign(
+          new Error(`Invalid JSON from ${url}; content-type=${contentType}; body=${preview}`),
+          { nonRetryable: true },
+        );
+      }
     } catch (error) {
       lastError = error;
       if (error?.nonRetryable || attempt === retries - 1) break;
@@ -179,6 +189,47 @@ async function collectCountry(countryCode, fetchedAt) {
   const result = await fetchJsonWithRetry(sourceUrl(countryCode));
   if (result.kind === "unsupported") return { kind: "unsupported", countryCode };
   return { kind: "success", countryCode, row: parsePriceResponse(result.data, countryCode, fetchedAt) };
+}
+
+function requestHeaders(url) {
+  const parsed = new URL(url);
+  const common = {
+    accept: "application/json, text/plain, */*",
+    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+  };
+  if (parsed.hostname !== "chatgpt.com" || !parsed.pathname.startsWith("/backend-anon/checkout_pricing_config/configs/")) {
+    return common;
+  }
+  return {
+    ...common,
+    origin: "https://chatgpt.com",
+    referer: "https://chatgpt.com/zh-Hans-CN/pricing/",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "x-openai-target-path": parsed.pathname,
+    "x-openai-target-route": "/backend-anon/checkout_pricing_config/configs/{country_code}",
+  };
+}
+
+async function responseDetail(response) {
+  const contentType = response.headers?.get?.("content-type") || "unknown";
+  const server = response.headers?.get?.("server") || "unknown";
+  const ray = response.headers?.get?.("cf-ray") || "none";
+  let body = "";
+  try {
+    body = await response.text();
+  } catch {
+    body = "<unreadable>";
+  }
+  return `; content-type=${contentType}; server=${server}; cf-ray=${ray}; body=${safePreview(body)}`;
+}
+
+function safePreview(value) {
+  return JSON.stringify(String(value || "").replace(/\s+/g, " ").slice(0, 240));
 }
 
 async function collectAllCountries(countryCodes, fetchedAt, concurrency = DEFAULT_CONCURRENCY) {
@@ -283,6 +334,7 @@ export async function collectSnapshot(options = {}) {
   const countryCodes = options.countryCodes || ISO_COUNTRY_CODES;
   const previousSnapshot = options.previousSnapshot || null;
   const collected = await collectAllCountries(countryCodes, generatedAt, options.concurrency);
+  logCollectionDiagnostics(collected, countryCodes.length);
   const currencies = collected.rows.map((row) => row.currencyCode);
   for (const failed of collected.failedItems) {
     const previous = previousSnapshot?.rows?.find((row) => row.countryCode === failed.countryCode);
@@ -318,11 +370,37 @@ export async function collectSnapshot(options = {}) {
   };
 }
 
+function logCollectionDiagnostics(collected, requested) {
+  console.log(
+    `[pricing] requested=${requested} success=${collected.rows.length} unsupported=${collected.unsupportedCodes.length} failed=${collected.failedItems.length}`,
+  );
+  if (!collected.failedItems.length) return;
+  const prioritized = [...collected.failedItems].sort((a, b) => {
+    if (a.countryCode === "US") return -1;
+    if (b.countryCode === "US") return 1;
+    return a.countryCode.localeCompare(b.countryCode);
+  });
+  for (const item of prioritized.slice(0, 12)) {
+    console.warn(`[pricing] ${item.countryCode} failed: ${item.error}`);
+  }
+  if (prioritized.length > 12) console.warn(`[pricing] ${prioritized.length - 12} additional failures omitted.`);
+}
+
 async function runCli() {
+  const probeCode = cliValue("--probe");
+  if (probeCode) {
+    const result = await collectCountry(probeCode.toUpperCase(), new Date().toISOString());
+    if (result.kind !== "success") throw new Error(`Pricing probe ${probeCode.toUpperCase()} returned ${result.kind}.`);
+    console.log(`[pricing] probe ${result.countryCode} ok: ${result.row.currencyCode} ${result.row.localAmount}`);
+    return;
+  }
   const outputPath = cliValue("--output") || process.env.OUTPUT_PATH || "public/data/prices.json";
   const previousSource = process.env.PREVIOUS_SNAPSHOT_URL || process.env.PREVIOUS_SNAPSHOT_PATH || null;
   const previousSnapshot = await readPreviousSnapshot(previousSource);
-  const snapshot = await collectSnapshot({ previousSnapshot });
+  const snapshot = await collectSnapshot({
+    previousSnapshot,
+    concurrency: Number(process.env.PRICING_CONCURRENCY || DEFAULT_CONCURRENCY),
+  });
   validateCoverage(snapshot, previousSnapshot, Number(process.env.MIN_FIRST_RUN_ROWS || 20));
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");

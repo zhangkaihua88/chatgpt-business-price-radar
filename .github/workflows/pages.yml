@@ -70,9 +70,13 @@ jobs:
           fi
           echo "PREVIOUS_SNAPSHOT_URL=$url" >> "$GITHUB_ENV"
 
+      - name: Probe the OpenAI pricing endpoint
+        run: npm run probe
+
       - name: Collect and validate official monthly prices
         env:
           MIN_FIRST_RUN_ROWS: 20
+          PRICING_CONCURRENCY: 4
         run: npm run collect
 
       - name: Type-check and build
