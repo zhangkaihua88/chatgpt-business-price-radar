@@ -53,6 +53,32 @@ describe("official Business monthly parser", () => {
     expect(() => parsePriceResponse(raw, "SG")).toThrow(/Country mismatch/);
   });
 
+  it("recovers omitted currency metadata from safe fallbacks", async () => {
+    const us = await fixture("us.json");
+    delete us.symbol_code;
+    delete us.symbol;
+    delete us.minor_unit_exponent;
+    us.currency_config.business.year = { amount: 20 };
+    us.amount_per_credit = 0.04;
+    expect(parsePriceResponse(us, "US")).toMatchObject({
+      currencyCode: "USD",
+      currencySource: "usd-profile",
+      symbol: "$",
+      minorUnitExponent: 2,
+    });
+
+    const sg = await fixture("sg.json");
+    delete sg.symbol_code;
+    delete sg.symbol;
+    sg.pricing_rollout_gate = "is_pricing_enabled_for_sgd";
+    expect(parsePriceResponse(sg, "SG")).toMatchObject({ currencyCode: "SGD", currencySource: "rollout" });
+
+    const br = await fixture("br.json");
+    delete br.symbol_code;
+    delete br.symbol;
+    expect(parsePriceResponse(br, "BR")).toMatchObject({ currencyCode: "BRL", currencySource: "country-default" });
+  });
+
   it("classifies a 404 response as unsupported", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
     await expect(fetchJsonWithRetry("https://example.com/ZZ", { retries: 1 })).resolves.toEqual({

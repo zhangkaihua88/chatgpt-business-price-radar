@@ -6,6 +6,7 @@ export type PriceRow = {
   countryCode: string;
   countryName: string;
   currencyCode: string;
+  currencySource?: "api" | "rollout" | "usd-profile" | "country-default";
   symbol: string;
   minorUnitExponent: number;
   localAmount: number;

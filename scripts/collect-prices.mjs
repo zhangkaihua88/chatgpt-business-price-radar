@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import countryToCurrency from "country-to-currency";
 import { z } from "zod";
 
 export const ISO_COUNTRY_CODES = `
@@ -34,11 +35,22 @@ const upstreamSchema = z.object({
         amount: z.number().positive().finite(),
         tax: z.enum(["inclusive", "exclusive"]),
       }),
+      year: z.object({
+        amount: z.number().positive().finite(),
+      }).passthrough().optional(),
     }),
-  }),
-  symbol_code: z.string().length(3),
-  symbol: z.string().min(1),
-  minor_unit_exponent: z.number().int().min(0).max(4).optional().default(2),
+    symbol_code: z.string().length(3).optional(),
+    currency_code: z.string().length(3).optional(),
+    currency: z.string().length(3).optional(),
+    symbol: z.string().min(1).optional(),
+  }).passthrough(),
+  symbol_code: z.string().length(3).optional(),
+  currency_code: z.string().length(3).optional(),
+  currency: z.string().length(3).optional(),
+  symbol: z.string().min(1).optional(),
+  minor_unit_exponent: z.number().int().min(0).max(4).optional(),
+  pricing_rollout_gate: z.string().optional(),
+  amount_per_credit: z.number().finite().optional(),
   tax_type: z.string().min(1).nullable().optional(),
   tax_percent: z.number().finite().nullable().optional(),
 }).passthrough();
@@ -77,12 +89,14 @@ export function parsePriceResponse(raw, requestedCode, fetchedAt = new Date().to
     throw new Error(`Country mismatch: requested ${countryCode}, received ${data.country_code}`);
   }
 
+  const currency = resolveCurrency(data, countryCode);
   return {
     countryCode,
     countryName: countryNames.of(countryCode) || countryCode,
-    currencyCode: data.symbol_code.toUpperCase(),
-    symbol: data.symbol,
-    minorUnitExponent: data.minor_unit_exponent,
+    currencyCode: currency.code,
+    currencySource: currency.source,
+    symbol: data.symbol || data.currency_config.symbol || currencySymbol(currency.code),
+    minorUnitExponent: data.minor_unit_exponent ?? currencyDigits(currency.code),
     localAmount: data.currency_config.business.month.amount,
     taxTreatment: data.currency_config.business.month.tax,
     taxType: data.tax_type ?? null,
@@ -188,7 +202,57 @@ export async function fetchJsonWithRetry(url, options = {}) {
 async function collectCountry(countryCode, fetchedAt) {
   const result = await fetchJsonWithRetry(sourceUrl(countryCode));
   if (result.kind === "unsupported") return { kind: "unsupported", countryCode };
-  return { kind: "success", countryCode, row: parsePriceResponse(result.data, countryCode, fetchedAt) };
+  return {
+    kind: "success",
+    countryCode,
+    responseKeys: Object.keys(result.data || {}).sort(),
+    row: parsePriceResponse(result.data, countryCode, fetchedAt),
+  };
+}
+
+function resolveCurrency(data, countryCode) {
+  const explicit = data.symbol_code
+    || data.currency_code
+    || data.currency
+    || data.currency_config.symbol_code
+    || data.currency_config.currency_code
+    || data.currency_config.currency;
+  if (explicit) return { code: explicit.toUpperCase(), source: "api" };
+
+  const rolloutCurrency = data.pricing_rollout_gate?.match(/pricing_enabled_for_([a-z]{3})/i)?.[1];
+  if (rolloutCurrency) return { code: rolloutCurrency.toUpperCase(), source: "rollout" };
+
+  const monthAmount = data.currency_config.business.month.amount;
+  const yearAmount = data.currency_config.business.year?.amount;
+  const oneDollarAmount = data.promos?.business_one_dollar?.amount;
+  const looksLikeUsdProfile = monthAmount === 25
+    && (yearAmount === 20 || data.amount_per_credit === 0.04 || oneDollarAmount === 1);
+  if (looksLikeUsdProfile) return { code: "USD", source: "usd-profile" };
+
+  const countryCurrency = countryToCurrency[countryCode];
+  if (countryCurrency) return { code: countryCurrency, source: "country-default" };
+  throw new Error(`Currency metadata is missing for ${countryCode} and no safe fallback is available.`);
+}
+
+function currencySymbol(currencyCode) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currencyCode,
+      currencyDisplay: "narrowSymbol",
+    }).formatToParts(0).find((part) => part.type === "currency")?.value || currencyCode;
+  } catch {
+    return currencyCode;
+  }
+}
+
+function currencyDigits(currencyCode) {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currencyCode })
+      .resolvedOptions().maximumFractionDigits;
+  } catch {
+    return 2;
+  }
 }
 
 function requestHeaders(url) {
@@ -391,7 +455,9 @@ async function runCli() {
   if (probeCode) {
     const result = await collectCountry(probeCode.toUpperCase(), new Date().toISOString());
     if (result.kind !== "success") throw new Error(`Pricing probe ${probeCode.toUpperCase()} returned ${result.kind}.`);
-    console.log(`[pricing] probe ${result.countryCode} ok: ${result.row.currencyCode} ${result.row.localAmount}`);
+    console.log(
+      `[pricing] probe ${result.countryCode} ok: ${result.row.currencyCode} ${result.row.localAmount}; currency-source=${result.row.currencySource}; response-keys=${result.responseKeys.join(",")}`,
+    );
     return;
   }
   const outputPath = cliValue("--output") || process.env.OUTPUT_PATH || "public/data/prices.json";
