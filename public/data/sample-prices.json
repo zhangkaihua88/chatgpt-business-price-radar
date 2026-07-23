@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "mode": "sample",
+  "generatedAt": "2026-07-22T15:00:00.000Z",
+  "pricingSource": {
+    "name": "OpenAI ChatGPT checkout pricing config",
+    "urlTemplate": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/{country_code}"
+  },
+  "fx": {
+    "baseCurrency": "USD",
+    "date": "2026-06-29",
+    "source": "示例汇率",
+    "sourceUrls": [],
+    "rates": {
+      "USD": 1,
+      "CNY": 6.803731,
+      "SGD": 1.294141,
+      "INR": 94.490194,
+      "JPY": 161.766947,
+      "EUR": 0.878247,
+      "BRL": 5.173169
+    }
+  },
+  "coverage": {
+    "requested": 249,
+    "success": 6,
+    "unsupported": 0,
+    "failed": 0,
+    "stale": 0
+  },
+  "rows": [
+    {
+      "countryCode": "JP",
+      "countryName": "日本",
+      "currencyCode": "JPY",
+      "symbol": "¥",
+      "minorUnitExponent": 0,
+      "localAmount": 3850,
+      "usdAmount": 23.8,
+      "cnyAmount": 161.93,
+      "taxTreatment": "exclusive",
+      "taxType": "jct",
+      "taxPercent": 10,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/JP"
+    },
+    {
+      "countryCode": "IN",
+      "countryName": "印度",
+      "currencyCode": "INR",
+      "symbol": "₹",
+      "minorUnitExponent": 2,
+      "localAmount": 2250,
+      "usdAmount": 23.81,
+      "cnyAmount": 162.01,
+      "taxTreatment": "exclusive",
+      "taxType": "gst",
+      "taxPercent": 18,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/IN"
+    },
+    {
+      "countryCode": "SG",
+      "countryName": "新加坡",
+      "currencyCode": "SGD",
+      "symbol": "S$",
+      "minorUnitExponent": 2,
+      "localAmount": 32,
+      "usdAmount": 24.73,
+      "cnyAmount": 168.23,
+      "taxTreatment": "exclusive",
+      "taxType": "gst",
+      "taxPercent": 9,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/SG"
+    },
+    {
+      "countryCode": "US",
+      "countryName": "美国",
+      "currencyCode": "USD",
+      "symbol": "$",
+      "minorUnitExponent": 2,
+      "localAmount": 25,
+      "usdAmount": 25,
+      "cnyAmount": 170.09,
+      "taxTreatment": "exclusive",
+      "taxType": "other",
+      "taxPercent": null,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/US"
+    },
+    {
+      "countryCode": "BR",
+      "countryName": "巴西",
+      "currencyCode": "BRL",
+      "symbol": "R$",
+      "minorUnitExponent": 2,
+      "localAmount": 130,
+      "usdAmount": 25.13,
+      "cnyAmount": 170.98,
+      "taxTreatment": "exclusive",
+      "taxType": "vat",
+      "taxPercent": 0,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/BR"
+    },
+    {
+      "countryCode": "DE",
+      "countryName": "德国",
+      "currencyCode": "EUR",
+      "symbol": "€",
+      "minorUnitExponent": 2,
+      "localAmount": 26,
+      "usdAmount": 29.6,
+      "cnyAmount": 201.42,
+      "taxTreatment": "inclusive",
+      "taxType": "vat",
+      "taxPercent": 19,
+      "status": "fresh",
+      "fetchedAt": "2026-07-22T15:00:00.000Z",
+      "sourceUrl": "https://chatgpt.com/backend-anon/checkout_pricing_config/configs/DE"
+    }
+  ]
+}

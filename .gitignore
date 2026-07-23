@@ -1,0 +1,8 @@
+node_modules/
+dist/
+public/data/prices.json
+coverage/
+*.local
+.DS_Store
+npm-debug.log*
+*.tsbuildinfo
