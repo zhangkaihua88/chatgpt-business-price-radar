@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Database,
+  Github,
   Info,
   Search,
   ShieldCheck,
@@ -46,7 +47,7 @@ async function loadSnapshot(): Promise<PricingSnapshot> {
 
 function initialCurrency(): DisplayCurrency {
   const stored = window.localStorage.getItem(currencyStorageKey);
-  return stored === "USD" ? "USD" : "CNY";
+  return stored === "CNY" ? "CNY" : "USD";
 }
 
 export default function App() {
@@ -118,6 +119,17 @@ export default function App() {
           <span className="source-pill">
             <span className="live-dot" /> OpenAI 公开配置
           </span>
+          <a
+            className="github-badge"
+            href="https://github.com/zhangkaihua88/chatgpt-business-price-radar"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="在 GitHub 查看 zhangkaihua88/chatgpt-business-price-radar"
+            title="GitHub 仓库"
+          >
+            <Github size={16} aria-hidden="true" />
+            <span>GitHub</span>
+          </a>
           <CurrencyToggle value={currency} onChange={setDisplayCurrency} />
         </div>
       </header>

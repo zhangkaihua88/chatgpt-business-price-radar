@@ -22,12 +22,22 @@ describe("pricing explorer", () => {
     render(<App />);
 
     expect((await screen.findAllByText("S$32.00")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "$ USD" })).toHaveAttribute("aria-pressed", "false");
-    await user.click(screen.getByRole("button", { name: "$ USD" }));
     expect(screen.getByRole("button", { name: "$ USD" })).toHaveAttribute("aria-pressed", "true");
     expect((await screen.findAllByText("$23.80")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "¥ CNY" }));
+    expect(screen.getByRole("button", { name: "¥ CNY" })).toHaveAttribute("aria-pressed", "true");
+    expect((await screen.findAllByText("¥161.93")).length).toBeGreaterThan(0);
     expect((screen.getAllByText("S$32.00")).length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("links to the project repository and honors a saved CNY preference", () => {
+    window.localStorage.setItem("business-price-radar:currency", "CNY");
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "¥ CNY" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "在 GitHub 查看 zhangkaihua88/chatgpt-business-price-radar" }))
+      .toHaveAttribute("href", "https://github.com/zhangkaihua88/chatgpt-business-price-radar");
   });
 
   it("filters by country and tax treatment", async () => {

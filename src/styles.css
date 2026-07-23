@@ -34,6 +34,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .topbar-actions { display: flex; align-items: center; gap: 18px; }
 .source-pill { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #2ca675; box-shadow: 0 0 0 4px rgba(44,166,117,.12); }
+.github-badge { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.75); color: var(--ink); font-size: 11px; font-weight: 750; text-decoration: none; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
+.github-badge:hover { color: white; background: var(--ink); border-color: var(--ink); transform: translateY(-1px); }
+.github-badge:focus-visible { outline: 3px solid rgba(23,107,77,.24); outline-offset: 2px; }
 .currency-toggle { display: inline-flex; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.75); }
 .currency-toggle button { border: 0; background: transparent; color: var(--muted); padding: 8px 11px; border-radius: 8px; font-size: 12px; font-weight: 750; cursor: pointer; }
 .currency-toggle button.active { background: var(--ink); color: white; box-shadow: 0 3px 10px rgba(20,30,27,.14); }
@@ -149,8 +152,11 @@ footer > span:last-child { text-align: right; }
 @media (max-width: 760px) {
   .topbar, main, footer { width: min(100% - 32px, 680px); }
   .topbar { height: 74px; }
+  .topbar-actions { gap: 8px; }
   .source-pill { display: none; }
   .brand small { display: none; }
+  .github-badge { width: 36px; height: 36px; padding: 0; }
+  .github-badge span { display: none; }
   .currency-toggle button { padding: 7px 9px; font-size: 10px; }
   .hero { min-height: auto; grid-template-columns: 1fr; gap: 34px; padding: 64px 0 46px; }
   .hero::before { width: 360px; height: 360px; right: -250px; }
