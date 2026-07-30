@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
+  Code2,
   Database,
   Github,
   Info,
@@ -12,6 +13,12 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import CheckoutGenerator from "./CheckoutGenerator";
+import {
+  DEFAULT_CHECKOUT_COUNTRY,
+  DEFAULT_CHECKOUT_CURRENCY,
+  isSupportedCheckoutCurrency,
+} from "./checkout-generator";
 import { filterAndSortRows, flagEmoji, formatConverted, formatLocal, relativeTime, taxLabel } from "./lib";
 import type {
   DisplayCurrency,
@@ -23,6 +30,18 @@ import type {
 } from "./types";
 
 const currencyStorageKey = "business-price-radar:currency";
+
+type AppView = "prices" | "generator";
+type AppRoute = { view: AppView; country: string; currency: string };
+
+function readRoute(): AppRoute {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    view: params.get("view") === "generator" ? "generator" : "prices",
+    country: params.get("country")?.toUpperCase() || DEFAULT_CHECKOUT_COUNTRY,
+    currency: params.get("currency")?.toUpperCase() || DEFAULT_CHECKOUT_CURRENCY,
+  };
+}
 
 async function loadSnapshot(): Promise<PricingSnapshot> {
   const liveUrl = new URL("data/prices.json", document.baseURI);
@@ -51,6 +70,7 @@ function initialCurrency(): DisplayCurrency {
 }
 
 export default function App() {
+  const [route, setRoute] = useState<AppRoute>(readRoute);
   const [snapshot, setSnapshot] = useState<PricingSnapshot | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [currency, setCurrency] = useState<DisplayCurrency>(initialCurrency);
@@ -71,6 +91,12 @@ export default function App() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => setRoute(readRoute());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -103,22 +129,49 @@ export default function App() {
     window.localStorage.setItem(currencyStorageKey, value);
   };
 
+  const navigate = (nextView: AppView, row?: Pick<PriceRow, "countryCode" | "currencyCode">) => {
+    const url = new URL(window.location.href);
+    if (nextView === "generator") {
+      url.searchParams.set("view", "generator");
+      if (row) {
+        url.searchParams.set("country", row.countryCode);
+        url.searchParams.set("currency", row.currencyCode);
+      } else {
+        url.searchParams.delete("country");
+        url.searchParams.delete("currency");
+      }
+    } else {
+      url.searchParams.delete("view");
+      url.searchParams.delete("country");
+      url.searchParams.delete("currency");
+    }
+    window.history.pushState({}, "", url);
+    setRoute(readRoute());
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="./" aria-label="Business Price Radar 首页">
+        <button className="brand brand-button" type="button" onClick={() => navigate("prices")} aria-label="Business Toolkit 首页">
           <span className="brand-mark" aria-hidden="true">
             <span />
           </span>
           <span>
-            <strong>Business Price Radar</strong>
-            <small>全球月付价格</small>
+            <strong>Business Toolkit</strong>
+            <small>价格与结账工具</small>
           </span>
-        </a>
+        </button>
+        <nav className="tool-navigation" aria-label="工具导航">
+          <button className={route.view === "prices" ? "active" : ""} type="button" onClick={() => navigate("prices")}>
+            <CircleDollarSign size={15} /> 价格雷达
+          </button>
+          <button className={route.view === "generator" ? "active" : ""} type="button" onClick={() => navigate("generator")}>
+            <Code2 size={15} /> 脚本生成器
+          </button>
+        </nav>
         <div className="topbar-actions">
-          <span className="source-pill">
-            <span className="live-dot" /> OpenAI 公开配置
-          </span>
+          {route.view === "prices" ? <span className="source-pill"><span className="live-dot" /> OpenAI 公开配置</span> : null}
           <a
             className="github-badge"
             href="https://github.com/zhangkaihua88/chatgpt-business-price-radar"
@@ -130,11 +183,13 @@ export default function App() {
             <Github size={16} aria-hidden="true" />
             <span>GitHub</span>
           </a>
-          <CurrencyToggle value={currency} onChange={setDisplayCurrency} />
+          {route.view === "prices" ? <CurrencyToggle value={currency} onChange={setDisplayCurrency} /> : null}
         </div>
       </header>
 
       <main>
+        {route.view === "prices" ? (
+          <>
         <section className="hero">
           <div className="hero-copy">
             <span className="eyebrow"><CircleDollarSign size={15} /> CHATGPT BUSINESS · MONTHLY</span>
@@ -266,8 +321,8 @@ export default function App() {
           {!snapshot && !loadingError ? <LoadingRows /> : null}
           {snapshot && rows.length ? (
             <>
-              <PriceTable rows={rows} currency={currency} />
-              <PriceCards rows={rows} currency={currency} />
+              <PriceTable rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row)} />
+              <PriceCards rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row)} />
             </>
           ) : null}
           {snapshot && !rows.length ? (
@@ -279,7 +334,7 @@ export default function App() {
           <article>
             <span className="explainer-number">01</span>
             <h3>价格从哪里来？</h3>
-            <p>报价来自 chatgpt.com 的公开结账价格配置接口。本站只读取 Business 月付字段，不参与购买。</p>
+            <p>报价来自 chatgpt.com 的公开结账价格配置接口。价格雷达只读取 Business 月付字段。</p>
           </article>
           <article>
             <span className="explainer-number">02</span>
@@ -296,17 +351,26 @@ export default function App() {
         <section className="disclaimer">
           <Info size={19} />
           <p>
-            <strong>独立信息工具，非 OpenAI 官方产品。</strong>
-            实际价格、税费、付款资格与地区可用性以结账页为准。ChatGPT Business 按用户计费，标准席位至少购买 2 个。
+            <strong>独立工具，非 OpenAI 官方产品。</strong>
+            价格数据来自公开配置；脚本仅在浏览器本地生成，不会由本站执行。实际价格、税费、付款资格与地区可用性以结账页为准。
             <a href="https://help.openai.com/en/articles/8792536" target="_blank" rel="noreferrer">查看官方账单说明 <ArrowUpRight size={14} /></a>
           </p>
         </section>
+          </>
+        ) : (
+          <CheckoutGenerator
+            initialCountry={route.country}
+            initialCurrency={route.currency}
+            countries={snapshot?.rows ?? []}
+            onBack={() => navigate("prices")}
+          />
+        )}
       </main>
 
       <footer>
         <div className="brand footer-brand">
           <span className="brand-mark" aria-hidden="true"><span /></span>
-          <span><strong>Business Price Radar</strong><small>Independent pricing reference</small></span>
+          <span><strong>Business Toolkit</strong><small>Independent pricing & checkout tools</small></span>
         </div>
         <p>ChatGPT 与 OpenAI 为其各自权利人的商标。本站与 OpenAI 无隶属或背书关系。</p>
         <span>MIT License · Data refreshed by GitHub Actions</span>
@@ -357,7 +421,15 @@ function StatusBadge({ status }: { status: PriceRow["status"] }) {
   );
 }
 
-function PriceTable({ rows, currency }: { rows: PriceRow[]; currency: DisplayCurrency }) {
+function PriceTable({
+  rows,
+  currency,
+  onGenerate,
+}: {
+  rows: PriceRow[];
+  currency: DisplayCurrency;
+  onGenerate: (row: PriceRow) => void;
+}) {
   return (
     <div className="table-wrap">
       <table>
@@ -368,7 +440,7 @@ function PriceTable({ rows, currency }: { rows: PriceRow[]; currency: DisplayCur
             <th scope="col">折合 {currency}</th>
             <th scope="col">税费口径</th>
             <th scope="col">更新时间</th>
-            <th scope="col"><span className="sr-only">来源</span></th>
+            <th scope="col">快捷操作</th>
           </tr>
         </thead>
         <tbody>
@@ -385,9 +457,19 @@ function PriceTable({ rows, currency }: { rows: PriceRow[]; currency: DisplayCur
               <td><strong className="converted-amount"><ConvertedPrice row={row} currency={currency} /></strong></td>
               <td><span className={`tax-badge ${row.taxTreatment}`}>{taxLabel(row)}</span></td>
               <td><StatusBadge status={row.status} /><span className="updated-time">{relativeTime(row.fetchedAt)}</span></td>
-              <td>
+              <td className="row-actions">
+                <button
+                  className="generate-row-button"
+                  type="button"
+                  disabled={!isSupportedCheckoutCurrency(row.currencyCode)}
+                  onClick={() => onGenerate(row)}
+                  aria-label={`为${row.countryName}生成脚本`}
+                  title={isSupportedCheckoutCurrency(row.currencyCode) ? "带入国家和货币生成脚本" : "该币种暂不支持脚本生成"}
+                >
+                  <Code2 size={14} /> 生成脚本
+                </button>
                 <a className="source-link" href={row.sourceUrl} target="_blank" rel="noreferrer" aria-label={`查看${row.countryName}官方价格源`}>
-                  <ArrowUpRight size={17} />
+                  <ArrowUpRight size={16} />
                 </a>
               </td>
             </tr>
@@ -398,7 +480,15 @@ function PriceTable({ rows, currency }: { rows: PriceRow[]; currency: DisplayCur
   );
 }
 
-function PriceCards({ rows, currency }: { rows: PriceRow[]; currency: DisplayCurrency }) {
+function PriceCards({
+  rows,
+  currency,
+  onGenerate,
+}: {
+  rows: PriceRow[];
+  currency: DisplayCurrency;
+  onGenerate: (row: PriceRow) => void;
+}) {
   return (
     <div className="price-cards">
       {rows.map((row, index) => (
@@ -416,7 +506,15 @@ function PriceCards({ rows, currency }: { rows: PriceRow[]; currency: DisplayCur
             <span>官方原价 <strong>{formatLocal(row)}</strong></span>
             <span className={`tax-badge ${row.taxTreatment}`}>{taxLabel(row)}</span>
           </div>
-          <a href={row.sourceUrl} target="_blank" rel="noreferrer">查看官方价格源 <ArrowUpRight size={15} /></a>
+          <div className="mobile-card-actions">
+            <button
+              type="button"
+              disabled={!isSupportedCheckoutCurrency(row.currencyCode)}
+              onClick={() => onGenerate(row)}
+              aria-label={`为${row.countryName}生成脚本`}
+            ><Code2 size={14} /> 生成脚本</button>
+            <a href={row.sourceUrl} target="_blank" rel="noreferrer">官方价格源 <ArrowUpRight size={15} /></a>
+          </div>
         </article>
       ))}
     </div>
