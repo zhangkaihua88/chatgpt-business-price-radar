@@ -42,16 +42,22 @@ export const CHECKOUT_CURRENCIES = [
 
 export const DEFAULT_CHECKOUT_COUNTRY = "US";
 export const DEFAULT_CHECKOUT_CURRENCY = "EGP";
+export const DEFAULT_ACCESS_TOKEN_MODE = "auto" as const;
 
 const currencyCodes = new Set<string>(CHECKOUT_CURRENCIES.map(([code]) => code));
+
+export type AccessTokenMode = "auto" | "manual";
 
 export type CheckoutScriptInput = {
   coupon: string;
   country: string;
   currency: string;
+  accessTokenMode: AccessTokenMode;
+  accessToken: string;
 };
 
-export type CheckoutValidationErrors = Partial<Record<keyof CheckoutScriptInput, string>>;
+export type CheckoutInputField = "coupon" | "country" | "currency" | "accessToken";
+export type CheckoutValidationErrors = Partial<Record<CheckoutInputField, string>>;
 
 export function normalizeIsoInput(value: string, maxLength: number): string {
   return value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, maxLength);
@@ -61,11 +67,45 @@ export function isSupportedCheckoutCurrency(value: string): boolean {
   return currencyCodes.has(value.toUpperCase());
 }
 
+function findAccessToken(value: unknown, depth = 0): string | null {
+  if (depth > 4 || value == null || typeof value !== "object") return null;
+  for (const [key, child] of Object.entries(value)) {
+    if ((key === "accessToken" || key === "access_token") && typeof child === "string" && child.trim()) {
+      return child.trim();
+    }
+  }
+  for (const child of Object.values(value)) {
+    const token = findAccessToken(child, depth + 1);
+    if (token) return token;
+  }
+  return null;
+}
+
+export function extractAccessToken(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith('"')) {
+    return trimmed;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed === "string") return parsed.trim() || null;
+    return findAccessToken(parsed);
+  } catch {
+    return null;
+  }
+}
+
 export function validateCheckoutInput(input: CheckoutScriptInput): CheckoutValidationErrors {
   const errors: CheckoutValidationErrors = {};
   if (!input.coupon.trim()) errors.coupon = "请输入优惠码";
   if (!/^[A-Z]{2}$/.test(input.country)) errors.country = "请输入 2 位英文字母国家代码";
   if (!isSupportedCheckoutCurrency(input.currency)) errors.currency = "请选择支持的货币代码";
+  if (input.accessTokenMode === "manual" && !input.accessToken.trim()) {
+    errors.accessToken = "请输入 Access Token 或 Session JSON";
+  } else if (input.accessTokenMode === "manual" && !extractAccessToken(input.accessToken)) {
+    errors.accessToken = "未能从输入内容中提取 accessToken";
+  }
   return errors;
 }
 
@@ -74,17 +114,19 @@ export function generateCheckoutScript(input: CheckoutScriptInput): string {
   const country = input.country || DEFAULT_CHECKOUT_COUNTRY;
   const currency = input.currency || DEFAULT_CHECKOUT_CURRENCY;
   const encodedCoupon = encodeURIComponent(coupon);
-
-  return `(async function generateAUTeamLink() {
-  // ================= 配置项 =================
-  const WORKSPACE_NAME = "xxx";
-  const COUPON = ${JSON.stringify(coupon)};   // 优惠码
-  const SEAT_QUANTITY = 2;            // 席位数量（Team 最少 2 个）
-  // ==========================================
-
-  console.log("⏳ 正在获取 ChatGPT Session Token...");
-
-  // 1. 自动获取登录凭证
+  const tokenStatusMessage = input.accessTokenMode === "manual"
+    ? "⏳ 正在使用手动 Access Token..."
+    : "⏳ 正在获取 ChatGPT Session Token...";
+  const manualAccessToken = extractAccessToken(input.accessToken);
+  const tokenSource = input.accessTokenMode === "manual"
+    ? `  // 1. 使用手动提供的登录凭证
+  const accessToken = ${JSON.stringify(manualAccessToken || "PASTE_ACCESS_TOKEN_HERE")};
+  if (!accessToken || accessToken === "PASTE_ACCESS_TOKEN_HERE") {
+    console.error("❌ Access Token 为空，请重新生成并填入 Token");
+    return;
+  }
+  console.log("✅ 已使用手动 Access Token");`
+    : `  // 1. 自动获取登录凭证
   let accessToken;
   try {
     const s = await fetch("/api/auth/session").then(r => r.json());
@@ -94,7 +136,18 @@ export function generateCheckoutScript(input: CheckoutScriptInput): string {
     console.error("❌ 获取 Token 失败：", e.message);
     return;
   }
-  console.log("✅ Token 获取成功");
+  console.log("✅ Token 获取成功");`;
+
+  return `(async function generateAUTeamLink() {
+  // ================= 配置项 =================
+  const WORKSPACE_NAME = "xxx";
+  const COUPON = ${JSON.stringify(coupon)};   // 优惠码
+  const SEAT_QUANTITY = 2;            // 席位数量（Team 最少 2 个）
+  // ==========================================
+
+  console.log(${JSON.stringify(tokenStatusMessage)});
+
+${tokenSource}
 
   // 2. 构建请求 Payload
   const payload = {

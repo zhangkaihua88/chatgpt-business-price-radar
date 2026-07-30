@@ -171,6 +171,19 @@ tbody tr:hover { background: #f9fbf8; }
 .generator-field > input:focus, .iso-input:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,107,77,.1); }
 .generator-field.has-error > input, .generator-field.has-error .iso-input { border-color: #bd5b4f; }
 .generator-field > em { display: block; margin-top: 7px; color: #a74338; font-size: 9px; font-style: normal; }
+.token-source-field { margin: 0 0 18px; padding: 0; border: 0; }
+.token-source-field legend { margin-bottom: 8px; font-size: 12px; font-weight: 750; }
+.token-source-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.token-source-options label { position: relative; display: flex; min-height: 61px; align-items: center; padding: 11px 12px; border: 1px solid #d7ddd7; border-radius: 11px; background: white; cursor: pointer; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.token-source-options label.active { border-color: var(--green); background: #f1f7f1; box-shadow: 0 0 0 2px rgba(23,107,77,.07); }
+.token-source-options input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.token-source-options label::before { width: 13px; height: 13px; flex: 0 0 auto; margin-right: 9px; border: 1px solid #aab5ae; border-radius: 50%; background: white; content: ""; box-shadow: inset 0 0 0 3px white; }
+.token-source-options label.active::before { border-color: var(--green); background: var(--green); }
+.token-source-options span { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.token-source-options strong { font-size: 10px; }
+.token-source-options small { color: #87918d; font-size: 8px; line-height: 1.4; }
+.token-value-field { margin-top: -2px; }
+.token-value-field > input { font: 600 11px/1.4 "SFMono-Regular", Consolas, monospace; }
 .generator-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .iso-input { display: grid; grid-template-columns: auto 1fr; align-items: center; }
 .iso-input b { padding-left: 12px; color: #87918d; font: 700 9px/1 monospace; }
@@ -304,6 +317,7 @@ footer > span:last-child { text-align: right; }
   .section-heading p { display: none; }
   .generator-form-panel, .generator-result-panel { padding: 22px 16px; }
   .generator-field-grid { grid-template-columns: 1fr; gap: 0; }
+  .token-source-options { grid-template-columns: 1fr; }
   .result-head { align-items: flex-end; }
   .code-actions button:first-child { display: none; }
   .code-preview pre { padding: 16px; }

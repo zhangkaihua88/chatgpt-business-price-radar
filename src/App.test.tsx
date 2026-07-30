@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sample from "../public/data/sample-prices.json";
@@ -133,5 +133,39 @@ describe("pricing explorer", () => {
     await user.click(screen.getByRole("button", { name: /恢复默认值/ }));
     expect(screen.getByLabelText(/国家 ISO 缩写/)).toHaveValue("US");
     expect(screen.getByLabelText(/货币 ISO 缩写/)).toHaveValue("EGP");
+  });
+
+  it("accepts complete session JSON in manual token mode without storing it", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /脚本生成器/ }));
+
+    expect(screen.getByRole("radio", { name: /自动获取/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /手动粘贴/ }));
+    const tokenInput = screen.getByPlaceholderText("粘贴 accessToken 或完整 Session JSON");
+    const sessionJson = JSON.stringify({
+      user: { email: "private@example.com" },
+      accessToken: "session-access-token",
+    });
+    fireEvent.change(tokenInput, { target: { value: sessionJson } });
+    await user.type(screen.getByPlaceholderText("例如：XXXXXXXXXXXX"), "SAVE20");
+    await user.click(screen.getByRole("button", { name: /复制代码/ }));
+
+    const copiedScript = writeText.mock.calls[0][0] as string;
+    expect(copiedScript).toContain('const accessToken = "session-access-token"');
+    expect(copiedScript).not.toContain("private@example.com");
+    expect(copiedScript).not.toContain("/api/auth/session");
+    expect(window.location.search).not.toContain("session-access-token");
+    expect(Object.values(window.localStorage)).not.toContain("session-access-token");
+
+    await user.click(screen.getByRole("radio", { name: /自动获取/ }));
+    expect(screen.queryByPlaceholderText("粘贴 accessToken 或完整 Session JSON")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /手动粘贴/ }));
+    expect(screen.getByPlaceholderText("粘贴 accessToken 或完整 Session JSON")).toHaveValue("");
   });
 });

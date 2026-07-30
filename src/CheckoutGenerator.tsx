@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CHECKOUT_CURRENCIES,
+  DEFAULT_ACCESS_TOKEN_MODE,
   DEFAULT_CHECKOUT_COUNTRY,
   DEFAULT_CHECKOUT_CURRENCY,
   generateCheckoutScript,
@@ -19,6 +20,7 @@ import {
   normalizeIsoInput,
   validateCheckoutInput,
   type CheckoutScriptInput,
+  type CheckoutInputField,
   type CheckoutValidationErrors,
 } from "./checkout-generator";
 import type { PriceRow } from "./types";
@@ -41,12 +43,15 @@ export default function CheckoutGenerator({
   const [coupon, setCoupon] = useState("");
   const [country, setCountry] = useState(initialCountry);
   const [currency, setCurrency] = useState(initialCurrency);
+  const [accessTokenMode, setAccessTokenMode] = useState<"auto" | "manual">(DEFAULT_ACCESS_TOKEN_MODE);
+  const [accessToken, setAccessToken] = useState("");
   const [errors, setErrors] = useState<CheckoutValidationErrors>({});
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const couponRef = useRef<HTMLInputElement>(null);
   const countryRef = useRef<HTMLInputElement>(null);
   const currencyRef = useRef<HTMLInputElement>(null);
+  const accessTokenRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCountry(initialCountry || DEFAULT_CHECKOUT_COUNTRY);
@@ -64,6 +69,8 @@ export default function CheckoutGenerator({
     coupon: coupon.trim(),
     country: country.toUpperCase(),
     currency: currency.toUpperCase(),
+    accessTokenMode,
+    accessToken: accessToken.trim(),
   };
   const previewInput: CheckoutScriptInput = {
     coupon: normalized.coupon || "XXXXXXXXXXXX",
@@ -73,15 +80,25 @@ export default function CheckoutGenerator({
     currency: isSupportedCheckoutCurrency(normalized.currency)
       ? normalized.currency
       : DEFAULT_CHECKOUT_CURRENCY,
+    accessTokenMode,
+    accessToken: accessTokenMode === "manual"
+      ? normalized.accessToken || "PASTE_ACCESS_TOKEN_HERE"
+      : "",
   };
   const source = useMemo(
     () => generateCheckoutScript(previewInput),
-    [previewInput.coupon, previewInput.country, previewInput.currency],
+    [
+      previewInput.coupon,
+      previewInput.country,
+      previewInput.currency,
+      previewInput.accessTokenMode,
+      previewInput.accessToken,
+    ],
   );
   const isInputValid = Object.keys(validateCheckoutInput(normalized)).length === 0;
   const currencyName = CHECKOUT_CURRENCIES.find(([code]) => code === normalized.currency)?.[1];
 
-  const clearError = (field: keyof CheckoutScriptInput) => {
+  const clearError = (field: CheckoutInputField) => {
     if (!errors[field]) return;
     setErrors((current) => ({ ...current, [field]: undefined }));
   };
@@ -89,10 +106,11 @@ export default function CheckoutGenerator({
   const validateAndFocus = () => {
     const nextErrors = validateCheckoutInput(normalized);
     setErrors(nextErrors);
-    const firstError = Object.keys(nextErrors)[0] as keyof CheckoutScriptInput | undefined;
+    const firstError = Object.keys(nextErrors)[0] as CheckoutInputField | undefined;
     if (firstError === "coupon") couponRef.current?.focus();
     if (firstError === "country") countryRef.current?.focus();
     if (firstError === "currency") currencyRef.current?.focus();
+    if (firstError === "accessToken") accessTokenRef.current?.focus();
     return !firstError;
   };
 
@@ -148,8 +166,10 @@ export default function CheckoutGenerator({
     setCoupon("");
     setCountry(DEFAULT_CHECKOUT_COUNTRY);
     setCurrency(DEFAULT_CHECKOUT_CURRENCY);
+    setAccessTokenMode(DEFAULT_ACCESS_TOKEN_MODE);
+    setAccessToken("");
     setErrors({});
-    setNotice("已恢复默认值 US / EGP");
+    setNotice("已恢复自动获取与默认值 US / EGP");
     couponRef.current?.focus();
   };
 
@@ -162,11 +182,11 @@ export default function CheckoutGenerator({
           </button>
           <span className="eyebrow"><Code2 size={15} /> BUSINESS TOOL · GENERATOR</span>
           <h1>参数填好，<br /><em>脚本即刻就绪。</em></h1>
-          <p>输入优惠码、国家和货币，生成可复制的 ChatGPT Team 结账脚本。全部处理都在当前浏览器中完成。</p>
+          <p>选择自动获取或手动提供 Access Token，再输入优惠码、国家和货币，生成可复制的 ChatGPT Team 结账脚本。</p>
         </div>
         <div className="generator-promise">
           <ShieldCheck size={22} />
-          <div><strong>本地生成</strong><span>不上传、不保存优惠码，也不会在本站执行脚本。</span></div>
+          <div><strong>本地生成</strong><span>不上传、不保存优惠码或 Access Token，也不会在本站执行脚本。</span></div>
         </div>
       </section>
 
@@ -191,6 +211,56 @@ export default function CheckoutGenerator({
               />
               {errors.coupon ? <em role="alert">{errors.coupon}</em> : null}
             </label>
+
+            <fieldset className="token-source-field">
+              <legend>Access Token 来源</legend>
+              <div className="token-source-options">
+                <label className={accessTokenMode === "auto" ? "active" : ""}>
+                  <input
+                    type="radio"
+                    name="access-token-mode"
+                    value="auto"
+                    checked={accessTokenMode === "auto"}
+                    onChange={() => {
+                      setAccessTokenMode("auto");
+                      setAccessToken("");
+                      clearError("accessToken");
+                    }}
+                  />
+                  <span><strong>自动获取</strong><small>运行时读取登录 Session</small></span>
+                </label>
+                <label className={accessTokenMode === "manual" ? "active" : ""}>
+                  <input
+                    type="radio"
+                    name="access-token-mode"
+                    value="manual"
+                    checked={accessTokenMode === "manual"}
+                    onChange={() => {
+                      setAccessTokenMode("manual");
+                      clearError("accessToken");
+                    }}
+                  />
+                  <span><strong>手动粘贴</strong><small>支持 Token 或 Session JSON</small></span>
+                </label>
+              </div>
+            </fieldset>
+
+            {accessTokenMode === "manual" ? (
+              <label className={`generator-field token-value-field ${errors.accessToken ? "has-error" : ""}`}>
+                <span><strong>Access Token / Session JSON</strong><small>仅用于当前生成结果</small></span>
+                <input
+                  ref={accessTokenRef}
+                  type="password"
+                  value={accessToken}
+                  onChange={(event) => { setAccessToken(event.target.value); clearError("accessToken"); }}
+                  placeholder="粘贴 accessToken 或完整 Session JSON"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={Boolean(errors.accessToken)}
+                />
+                {errors.accessToken ? <em role="alert">{errors.accessToken}</em> : <small className="field-note">Session JSON 会自动提取 accessToken；切换回自动获取时立即清空</small>}
+              </label>
+            ) : null}
 
             <div className="generator-field-grid">
               <label className={`generator-field ${errors.country ? "has-error" : ""}`}>
@@ -248,6 +318,7 @@ export default function CheckoutGenerator({
           <div className="generator-steps">
             <span>如何使用</span>
             <ol>
+              <li>选择自动获取，或手动粘贴 Access Token。</li>
               <li>登录 ChatGPT 并打开浏览器控制台。</li>
               <li>复制生成的脚本，粘贴后执行。</li>
               <li>根据控制台输出查看 Stripe 长链接。</li>
