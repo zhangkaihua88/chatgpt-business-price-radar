@@ -52,11 +52,13 @@ export type CheckoutScriptInput = {
   coupon: string;
   country: string;
   currency: string;
+  existingWorkspaceId: string;
+  autoOpen: boolean;
   accessTokenMode: AccessTokenMode;
   accessToken: string;
 };
 
-export type CheckoutInputField = "coupon" | "country" | "currency" | "accessToken";
+export type CheckoutInputField = "coupon" | "country" | "currency" | "existingWorkspaceId" | "accessToken";
 export type CheckoutValidationErrors = Partial<Record<CheckoutInputField, string>>;
 
 export function normalizeIsoInput(value: string, maxLength: number): string {
@@ -85,12 +87,12 @@ export function extractAccessToken(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith('"')) {
-    return trimmed;
+    return trimmed.replace(/^Bearer\s+/i, "").replace(/\s+/g, "") || null;
   }
   try {
     const parsed: unknown = JSON.parse(trimmed);
-    if (typeof parsed === "string") return parsed.trim() || null;
-    return findAccessToken(parsed);
+    const token = typeof parsed === "string" ? parsed : findAccessToken(parsed);
+    return token?.replace(/^Bearer\s+/i, "").replace(/\s+/g, "") || null;
   } catch {
     return null;
   }
@@ -101,6 +103,9 @@ export function validateCheckoutInput(input: CheckoutScriptInput): CheckoutValid
   if (!input.coupon.trim()) errors.coupon = "请输入优惠码";
   if (!/^[A-Z]{2}$/.test(input.country)) errors.country = "请输入 2 位英文字母国家代码";
   if (!isSupportedCheckoutCurrency(input.currency)) errors.currency = "请选择支持的货币代码";
+  if (input.existingWorkspaceId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.existingWorkspaceId)) {
+    errors.existingWorkspaceId = "请输入有效 UUID，或留空新建空间";
+  }
   if (input.accessTokenMode === "manual" && !input.accessToken.trim()) {
     errors.accessToken = "请输入 Access Token 或 Session JSON";
   } else if (input.accessTokenMode === "manual" && !extractAccessToken(input.accessToken)) {
@@ -113,6 +118,7 @@ export function generateCheckoutScript(input: CheckoutScriptInput): string {
   const coupon = input.coupon || "XXXXXXXXXXXX";
   const country = input.country || DEFAULT_CHECKOUT_COUNTRY;
   const currency = input.currency || DEFAULT_CHECKOUT_CURRENCY;
+  const existingWorkspaceId = input.existingWorkspaceId.trim();
   const encodedCoupon = encodeURIComponent(coupon);
   const tokenStatusMessage = input.accessTokenMode === "manual"
     ? "⏳ 正在使用手动 Access Token..."
@@ -129,9 +135,15 @@ export function generateCheckoutScript(input: CheckoutScriptInput): string {
     : `  // 1. 自动获取登录凭证
   let accessToken;
   try {
-    const s = await fetch("/api/auth/session").then(r => r.json());
+    const s = await fetch("/api/auth/session", { credentials: "include" }).then(r => r.json());
     accessToken = s?.accessToken;
     if (!accessToken) throw new Error("accessToken 为空，请确认已登录 ChatGPT 账号");
+    const currentAccount = s.account || {};
+    const currentPlan = currentAccount.planType || currentAccount.plan_type;
+    const currentStructure = currentAccount.structure;
+    if (currentPlan !== "free" || currentStructure !== "personal") {
+      throw new Error("当前选中的不是 Personal/Free 个人账户，请先切换个人账户后重试");
+    }
   } catch (e) {
     console.error("❌ 获取 Token 失败：", e.message);
     return;
@@ -142,8 +154,14 @@ export function generateCheckoutScript(input: CheckoutScriptInput): string {
   // ================= 配置项 =================
   const WORKSPACE_NAME = "xxx";
   const COUPON = ${JSON.stringify(coupon)};   // 优惠码
+  const EXISTING_WORKSPACE_ID = ${JSON.stringify(existingWorkspaceId)}; // 留空则新建空间
   const SEAT_QUANTITY = 2;            // 席位数量（Team 最少 2 个）
+  const AUTO_OPEN_CHECKOUT = ${JSON.stringify(input.autoOpen)};
   // ==========================================
+
+  if (window.location.origin !== "https://chatgpt.com") {
+    throw new Error(\`请在 https://chatgpt.com 页面执行脚本，当前来源为 \${window.location.origin}\`);
+  }
 
   console.log(${JSON.stringify(tokenStatusMessage)});
 
@@ -155,7 +173,8 @@ ${tokenSource}
     team_plan_data: {
       workspace_name: WORKSPACE_NAME,
       price_interval: "month", // month 或 year
-      seat_quantity: SEAT_QUANTITY
+      seat_quantity: SEAT_QUANTITY,
+      ...(EXISTING_WORKSPACE_ID ? { existing_workspace_id: EXISTING_WORKSPACE_ID } : {})
     },
     billing_details: {
       country: ${JSON.stringify(country)},
@@ -170,13 +189,14 @@ ${tokenSource}
   console.log("⏳ 正在请求 Stripe 支付长链接...");
   try {
     const resp = await fetch(
-      "https://chatgpt.com/backend-api/payments/checkout",
+      "/backend-api/payments/checkout",
       {
         method: "POST",
         headers: {
           Authorization: \`Bearer \${accessToken}\`,
           "Content-Type": "application/json"
         },
+        credentials: "same-origin",
         body: JSON.stringify(payload)
       }
     );
@@ -193,6 +213,10 @@ ${tokenSource}
       console.warn("⚠️ 未找到长链接，原始响应：", data);
       return;
     }
+    const checkoutUrl = new URL(hostedUrl);
+    if (checkoutUrl.protocol !== "https:") {
+      throw new Error("服务端返回了无效的支付链接");
+    }
 
     // 4. 打印结果
     console.log("─".repeat(60));
@@ -206,8 +230,11 @@ ${tokenSource}
     }
     console.log("─".repeat(60));
     console.log("🔗 Stripe 支付长链接（复制到浏览器打开）：");
-    console.log(hostedUrl);
+    console.log(checkoutUrl.href);
     console.log("─".repeat(60));
+    if (AUTO_OPEN_CHECKOUT) {
+      window.open(checkoutUrl.href, "_blank", "noopener,noreferrer");
+    }
   } catch (e) {
     console.error("❌ 网络异常或请求失败：", e.message);
   }

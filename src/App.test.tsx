@@ -168,4 +168,32 @@ describe("pricing explorer", () => {
     await user.click(screen.getByRole("radio", { name: /手动粘贴/ }));
     expect(screen.getByPlaceholderText("粘贴 accessToken 或完整 Session JSON")).toHaveValue("");
   });
+
+  it("switches between Team, Codex and billing generators through the URL", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /脚本生成器/ }));
+    expect(screen.getByRole("tab", { name: /Team 优惠/ })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("tab", { name: /Codex 按量/ }));
+    expect(new URLSearchParams(window.location.search).get("tool")).toBe("codex");
+    expect(screen.getByPlaceholderText("填写空间名称")).toHaveValue("work");
+    expect(screen.getByLabelText(/Credit 数量/)).toHaveValue(13);
+    expect(screen.getByLabelText(/国家或地区/)).toHaveValue("US");
+
+    await user.click(screen.getByRole("tab", { name: /账单查询/ }));
+    expect(new URLSearchParams(window.location.search).get("tool")).toBe("billing");
+    expect(screen.queryByPlaceholderText("例如：XXXXXXXXXXXX")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /复制代码/ }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("window.__billingResult = result"));
+
+    window.history.pushState({}, "", "/?view=generator&tool=codex");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Codex 按量/ })).toHaveAttribute("aria-selected", "true"));
+  });
 });

@@ -25,6 +25,8 @@ describe("checkout script generator", () => {
       coupon: "",
       country: "USA",
       currency: "TRY",
+      existingWorkspaceId: "",
+      autoOpen: false,
       accessTokenMode: "auto",
       accessToken: "",
     }))
@@ -40,6 +42,8 @@ describe("checkout script generator", () => {
       coupon: 'SAVE "20" & 更多',
       country: "SG",
       currency: "SGD",
+      existingWorkspaceId: "",
+      autoOpen: false,
       accessTokenMode: "auto",
       accessToken: "",
     });
@@ -72,6 +76,8 @@ describe("checkout script generator", () => {
       coupon: "SAVE20",
       country: "US",
       currency: "EGP",
+      existingWorkspaceId: "",
+      autoOpen: false,
       accessTokenMode: "manual",
       accessToken: sessionJson,
     });
@@ -87,8 +93,27 @@ describe("checkout script generator", () => {
       coupon: "SAVE20",
       country: "US",
       currency: "EGP",
+      existingWorkspaceId: "",
+      autoOpen: false,
       accessTokenMode: "manual",
       accessToken: '{"user":true}',
     })).toEqual({ accessToken: "未能从输入内容中提取 accessToken" });
+  });
+
+  it("adds an existing workspace UUID and optional auto-open behavior", () => {
+    const workspaceId = "123e4567-e89b-12d3-a456-426614174000";
+    const script = generateCheckoutScript({
+      coupon: "SAVE20",
+      country: "US",
+      currency: "USD",
+      existingWorkspaceId: workspaceId,
+      autoOpen: true,
+      accessTokenMode: "auto",
+      accessToken: "",
+    });
+    expect(script).toContain(`const EXISTING_WORKSPACE_ID = "${workspaceId}"`);
+    expect(script).toContain("existing_workspace_id: EXISTING_WORKSPACE_ID");
+    expect(script).toContain("const AUTO_OPEN_CHECKOUT = true");
+    expect(() => new Function(script)).not.toThrow();
   });
 });

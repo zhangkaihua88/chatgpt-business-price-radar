@@ -19,6 +19,7 @@ import {
   DEFAULT_CHECKOUT_CURRENCY,
   isSupportedCheckoutCurrency,
 } from "./checkout-generator";
+import type { GeneratorTool } from "./script-generators";
 import { filterAndSortRows, flagEmoji, formatConverted, formatLocal, relativeTime, taxLabel } from "./lib";
 import type {
   DisplayCurrency,
@@ -32,12 +33,15 @@ import type {
 const currencyStorageKey = "business-price-radar:currency";
 
 type AppView = "prices" | "generator";
-type AppRoute = { view: AppView; country: string; currency: string };
+type AppRoute = { view: AppView; tool: GeneratorTool; country: string; currency: string };
 
 function readRoute(): AppRoute {
   const params = new URLSearchParams(window.location.search);
   return {
     view: params.get("view") === "generator" ? "generator" : "prices",
+    tool: params.get("tool") === "codex" || params.get("tool") === "billing"
+      ? params.get("tool") as GeneratorTool
+      : "checkout",
     country: params.get("country")?.toUpperCase() || DEFAULT_CHECKOUT_COUNTRY,
     currency: params.get("currency")?.toUpperCase() || DEFAULT_CHECKOUT_CURRENCY,
   };
@@ -129,10 +133,15 @@ export default function App() {
     window.localStorage.setItem(currencyStorageKey, value);
   };
 
-  const navigate = (nextView: AppView, row?: Pick<PriceRow, "countryCode" | "currencyCode">) => {
+  const navigate = (
+    nextView: AppView,
+    row?: Pick<PriceRow, "countryCode" | "currencyCode">,
+    tool: GeneratorTool = "checkout",
+  ) => {
     const url = new URL(window.location.href);
     if (nextView === "generator") {
       url.searchParams.set("view", "generator");
+      url.searchParams.set("tool", tool);
       if (row) {
         url.searchParams.set("country", row.countryCode);
         url.searchParams.set("currency", row.currencyCode);
@@ -144,6 +153,7 @@ export default function App() {
       url.searchParams.delete("view");
       url.searchParams.delete("country");
       url.searchParams.delete("currency");
+      url.searchParams.delete("tool");
     }
     window.history.pushState({}, "", url);
     setRoute(readRoute());
@@ -321,8 +331,8 @@ export default function App() {
           {!snapshot && !loadingError ? <LoadingRows /> : null}
           {snapshot && rows.length ? (
             <>
-              <PriceTable rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row)} />
-              <PriceCards rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row)} />
+              <PriceTable rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row, "checkout")} />
+              <PriceCards rows={rows} currency={currency} onGenerate={(row) => navigate("generator", row, "checkout")} />
             </>
           ) : null}
           {snapshot && !rows.length ? (
@@ -359,10 +369,12 @@ export default function App() {
           </>
         ) : (
           <CheckoutGenerator
+            initialTool={route.tool}
             initialCountry={route.country}
             initialCurrency={route.currency}
             countries={snapshot?.rows ?? []}
             onBack={() => navigate("prices")}
+            onToolChange={(tool) => navigate("generator", undefined, tool)}
           />
         )}
       </main>
